@@ -420,6 +420,59 @@ class TestDownloadNoDirectUri(test.NoDBTestCase):
     """
 
     @mock.patch('__builtin__.open')
+    @mock.patch('os.fsync')
+    def test_download_default_sync(self, fsync_mock, open_mock):
+        # Setup a minimal environment to get to the fsync() call in:
+        # download()
+        client = mock.MagicMock()
+        client.call.return_value = [1]
+        ctx = mock.sentinel.ctx
+        writer = mock.MagicMock()
+        open_mock.return_value = writer
+        service = glance.GlanceImageService(client)
+        res = service.download(ctx, mock.sentinel.image_id,
+                               dst_path=mock.sentinel.dst_path)
+        self.assertIsNone(res)
+        # The default is to fsync()
+        fsync_mock.assert_called_once_with(writer.fileno())
+
+    @mock.patch('__builtin__.open')
+    @mock.patch('os.fsync')
+    def test_download_sync(self, fsync_mock, open_mock):
+        self.flags(qemu_force_sync=True, group='workarounds')
+        # Setup a minimal environment to get to the fsync() call in:
+        # download()
+        client = mock.MagicMock()
+        client.call.return_value = [1]
+        ctx = mock.sentinel.ctx
+        writer = mock.MagicMock()
+        open_mock.return_value = writer
+        service = glance.GlanceImageService(client)
+        res = service.download(ctx, mock.sentinel.image_id,
+                               dst_path=mock.sentinel.dst_path)
+        self.assertIsNone(res)
+        # Make sure we fsync() when the workaround is True
+        fsync_mock.assert_called_once_with(writer.fileno())
+
+    @mock.patch('__builtin__.open')
+    @mock.patch('os.fsync')
+    def test_download_no_sync(self, fsync_mock, open_mock):
+        self.flags(qemu_force_sync=False, group='workarounds')
+        # Setup a minimal environment to get to the fsync() call in:
+        # download()
+        client = mock.MagicMock()
+        client.call.return_value = [1]
+        ctx = mock.sentinel.ctx
+        writer = mock.MagicMock()
+        open_mock.return_value = writer
+        service = glance.GlanceImageService(client)
+        res = service.download(ctx, mock.sentinel.image_id,
+                               dst_path=mock.sentinel.dst_path)
+        self.assertIsNone(res)
+        # Make sure we DO NOT fsync() when the workaround is False
+        self.assertFalse(fsync_mock.called)
+
+    @mock.patch('__builtin__.open')
     @mock.patch('nova.image.glance.GlanceImageService.show')
     def test_download_no_data_no_dest_path(self, show_mock, open_mock):
         client = mock.MagicMock()
@@ -437,6 +490,8 @@ class TestDownloadNoDirectUri(test.NoDBTestCase):
     @mock.patch('__builtin__.open')
     @mock.patch('nova.image.glance.GlanceImageService.show')
     def test_download_data_no_dest_path(self, show_mock, open_mock):
+        # Make sure we don't call os.fysnc() for no good reason
+        self.flags(qemu_force_sync=False, group='workarounds')
         client = mock.MagicMock()
         client.call.return_value = [1, 2, 3]
         ctx = mock.sentinel.ctx
@@ -461,6 +516,8 @@ class TestDownloadNoDirectUri(test.NoDBTestCase):
     @mock.patch('__builtin__.open')
     @mock.patch('nova.image.glance.GlanceImageService.show')
     def test_download_no_data_dest_path(self, show_mock, open_mock):
+        # Make sure we don't call os.fysnc() for no good reason
+        self.flags(qemu_force_sync=False, group='workarounds')
         client = mock.MagicMock()
         client.call.return_value = [1, 2, 3]
         ctx = mock.sentinel.ctx
@@ -487,6 +544,8 @@ class TestDownloadNoDirectUri(test.NoDBTestCase):
     @mock.patch('__builtin__.open')
     @mock.patch('nova.image.glance.GlanceImageService.show')
     def test_download_data_dest_path(self, show_mock, open_mock):
+        # Make sure we don't call os.fysnc() for no good reason
+        self.flags(qemu_force_sync=False, group='workarounds')
         # NOTE(jaypipes): This really shouldn't be allowed, but because of the
         # horrible design of the download() method in GlanceImageService, no
         # error is raised, and the dst_path is ignored...
@@ -516,6 +575,7 @@ class TestDownloadNoDirectUri(test.NoDBTestCase):
     @mock.patch('nova.image.glance.GlanceImageService._get_transfer_module')
     @mock.patch('nova.image.glance.GlanceImageService.show')
     def test_download_direct_file_uri(self, show_mock, get_tran_mock):
+        # Make sure we don't call os.fysnc() for no good reason
         self.flags(allowed_direct_url_schemes=['file'], group='glance')
         show_mock.return_value = {
             'locations': [
@@ -549,6 +609,8 @@ class TestDownloadNoDirectUri(test.NoDBTestCase):
     def test_download_direct_exception_fallback(self, show_mock,
                                                 get_tran_mock,
                                                 open_mock):
+        # Make sure we don't call os.fysnc() for no good reason
+        self.flags(qemu_force_sync=False, group='workarounds')
         # Test that we fall back to downloading to the dst_path
         # if the download method of the transfer module raised
         # an exception.
@@ -602,6 +664,8 @@ class TestDownloadNoDirectUri(test.NoDBTestCase):
     def test_download_direct_no_mod_fallback(self, show_mock,
                                               get_tran_mock,
                                               open_mock):
+        # Make sure we don't call os.fysnc() for no good reason
+        self.flags(qemu_force_sync=False, group='workarounds')
         # Test that we fall back to downloading to the dst_path
         # if no appropriate transfer module is found...
         # an exception.

@@ -19,6 +19,7 @@ from __future__ import absolute_import
 
 import copy
 import itertools
+import os
 import random
 import sys
 import time
@@ -68,12 +69,27 @@ glance_opts = [
                      '[file].'),
     ]
 
+workarounds_opts = [
+# NOTE(tonyb): This fsync() is to work around an issue in qemu where fiemap
+#              is used to read blocks from the source image BUT is not using
+#              FIEMAP_FLAG_SYNC.  This results in corrupt images.  This is
+#              fixed upstream we need this until we're $distros are fixed.
+#              See: https://wiki.openstack.org/wiki/Bug1368815 for tracking
+#              info and more details.
+    cfg.BoolOpt('qemu_force_sync',
+                default=True,
+                help='qemu-img convert -O raw is buggy in qemu <2.2.0.  This '
+                      'workaround forces either a sync() or fsync() as '
+                      'required'),
+    ]
+
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
 CONF.register_opts(glance_opts, 'glance')
 CONF.import_opt('auth_strategy', 'nova.api.auth')
 CONF.import_opt('my_ip', 'nova.netconf')
 CONF.import_group('ssl', 'nova.openstack.common.sslutils')
+CONF.register_opts(workarounds_opts, group='workarounds')
 
 
 def generate_glance_url():
@@ -363,6 +379,9 @@ class GlanceImageService(object):
                 for chunk in image_chunks:
                     data.write(chunk)
             finally:
+                if CONF.workarounds.qemu_force_sync:
+                    data.flush()
+                    os.fsync(data.fileno())
                 if close_file:
                     data.close()
 
